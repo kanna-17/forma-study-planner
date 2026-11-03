@@ -1,0 +1,47 @@
+html,body {background:#f5f2fc}
+.app,.app.dark {
+ color-scheme:light; --bg:#f5f2fc;--text:#30265e;--muted:#605a79;--blue:#5946b2;--blue-soft:#e8e1fa;
+ --surface:rgba(255,255,255,.47);--surface2:#ede8fa;--line:#c9bde44f;--green:#5946b2;--peach:#6756aa;--shadow:0 7px 20px #46327d14;
+ background: url('./ribbon.svg') center / 100% 100% fixed no-repeat,linear-gradient(135deg,#faf8ff,#eee8fa) fixed;
+}
+.app.dark {--surface:rgba(255,255,255,.36);--surface2:#e4dbf6; background-color:#ece5fa}
+.app :is(.panel,.metric,.topic-card,.note-card,.course-card,.quote,.modal,.roadmap-step,.agenda-item,.selected-date-panel,.selected-chip,.toggle-line,.roadmap-node) {
+ background:linear-gradient(135deg,#ffffff57,transparent 60%),var(--surface);border:1px solid #ffffffde;
+ box-shadow:inset 0 1px 1px white,0 6px 18px #49348316;backdrop-filter:blur(13px);-webkit-backdrop-filter:blur(13px)
+}
+.app .sidebar {background:#fbf9ffab;backdrop-filter:blur(16px);overflow-y:auto}
+.app .topbar {background:#f8f5ff70}
+.app :is(h1,h2,h3,.brand b,.metric strong,.course-card strong,.roadmap-step-name b,.timer-display) {color:#30265e}
+.app :is(.page-heading h1,.roadmap-title h2,.panel-head h2,.brand b,.roadmap-step-name b) {font-family:Georgia,serif;font-weight:700;letter-spacing:-.025em}
+.app .page-heading h1 {font-size:clamp(35px,4.2vw,62px)}
+.app .roadmap-title h2 {font-size:clamp(24px,3vw,40px)}
+.app .roadmap-step-name b {font-size:16px}
+.app :is(.nav-item,.text-btn,.icon-btn,.eyebrow,.workspace-label) {color:#40336c}
+.app :is(.nav-item.active,.avatar,.brand-mark,.metric-icon,.round-icon,.roadmap-symbol,.segmented button.chosen,.subject-pill,.selected-day,.empty-art) {background:#e4daf6;color:#49388e}
+.app :is(.btn.primary,.btn.primary:hover,.toast,.check-btn.checked,.is-today .day-number) {background:#5946b2;color:white;border-color:#5946b2}
+.app .btn.secondary,.app :is(input,select,textarea,.searchbox) {background:#fbf9ffcf;color:#30265e;border-color:#ac9cc888}
+.app :is(.status.completed,.status.pending,.due-label,.privacy-note) {background:#e9e2f6;color:#483d72}
+.app .status.started {background:#5946b2;color:white}
+.app .status.pending {background:#f7f5fc;color:#5a506f}
+.app :is(.bar,.bar.today-bar,.subject-dot,.study-dot,.progress-track>div) {background:#7060b9!important}
+.app .day-events span {--event-color:#6956b3!important}
+.app .roadmap-step {padding:10px 14px;border-radius:12px;margin:7px 0}
+.app .roadmap-steps {background:transparent;box-shadow:none;border:0;backdrop-filter:none;padding-inline:0}
+.app .modal {background:#f7f3ffef}
+.app .course-card {min-height:112px;align-content:start}
+.app .course-card:hover {outline:1px solid #8474bb}
+.app .nav-item.active {box-shadow:inset 2px 0 #5946b2}
+.app .roadmap-number.completed {background:#5946b2;color:white}
+.app .course-card:focus-visible {outline:2px solid #5946b2}
+.catalog-tools {display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.catalog-tools h2,.catalog-heading {margin:6px 0;font-size:21px}
+.catalog-tools p,.catalog-tools label,.course-card small {font-size:12px;color:var(--muted)}
+.catalog-tools label {display:grid;gap:5px}
+.catalog-heading {margin:24px 0 10px;font-size:16px}
+.catalog-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:12px}
+.course-card {padding:16px;border-radius:12px;display:grid;gap:8px;text-align:left;position:relative;color:var(--text)}
+.course-card svg:last-child {position:absolute;top:14px;right:12px}
+.course-card:hover,.course-card:focus-visible {outline:1px solid var(--blue)}
+
+.library-entry {width:100%;margin-bottom:16px}
+

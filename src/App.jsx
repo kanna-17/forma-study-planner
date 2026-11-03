@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { CourseCards, installCurriculum } from './Curriculum.jsx';
+import Roadmap, { RoadmapForm } from './Roadmap.jsx';
 import {
   LayoutDashboard, CalendarDays, Route, BookOpen, RefreshCw, Timer,
   NotebookPen, ListTodo, ChartNoAxesCombined, Library, Settings, Search,
@@ -16,7 +18,7 @@ const initial = {
   topics: [], studies: [], tasks: [], notes: [], resources: [], revisions: [],
   sessions: [], goals: {dailyHours:3}, theme:'light'
 };
-function load(){ try { return {...initial,...JSON.parse(localStorage.getItem(KEY)||'{}')}; } catch { return initial; } }
+function load(){ try { return installCurriculum({...initial,...JSON.parse(localStorage.getItem(KEY)||'{}')}); } catch { return installCurriculum(initial); } }
 const fmt = (d) => new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const same = (a,b) => a===b;
 const statusLabel = s => s==='completed'?'Completed':s==='started'?'In progress':'Pending';
@@ -38,20 +40,56 @@ export default function App(){
   useEffect(()=>{if(timer.running){const id=setInterval(()=>setTick(x=>x+1),1000);return()=>clearInterval(id)}},[timer.running]);
   useEffect(()=>{if(toast){const id=setTimeout(()=>setToast(''),2500);return()=>clearTimeout(id)}},[toast]);
   const update=(key,val)=>setData(d=>({...d,[key]:typeof val==='function'?val(d[key]):val}));
-  const nav=[['Overview',LayoutDashboard],['Calendar',CalendarDays],['Learning Roadmap',Route],['Subjects & Topics',BookOpen],['Revision Center',RefreshCw],['Study Sessions',Timer],['Notes',NotebookPen],['Tasks & Goals',ListTodo],['Resources',Library],['Analytics',ChartNoAxesCombined]];
+  const nav=[['Overview',LayoutDashboard],['Course Library',Library],['Calendar',CalendarDays],['Learning Roadmap',Route],['Subjects & Topics',BookOpen],['Revision Center',RefreshCw],['Study Sessions',Timer],['Notes',NotebookPen],['Tasks & Goals',ListTodo],['Resources',Library],['Analytics',ChartNoAxesCombined]];
   const subjectName=id=>data.subjects.find(s=>s.id===id)?.name||'Unassigned';
-  const addStudy=()=>{setEditing(null);setModal('study')};
+  const activeRoadmap = data.subjects.find(s => s.id === data.activeRoadmapId) || data.subjects.find(s => s.id === "forma-course-0") || data.subjects[0];
+  const newItem = (type, defaults = null) => { setEditing(defaults); setModal(type); };
+  const addStudy = () => newItem('study', page === 'Learning Roadmap' ? { subjectId: activeRoadmap?.id } : null);
+  const newTopic = () => newItem('topic', page === 'Learning Roadmap' ? { subjectId: activeRoadmap?.id } : null);
+  function saveRoadmap(fields, draftTopics) {
+    const id = editing?.id || uid();
+    const topics = draftTopics.map(t => ({ ...t, id: uid(), subjectId: id }));
+    setData(d => ({
+      ...d,
+      subjects: editing?.id
+        ? d.subjects.map(s => s.id === id ? { ...s, ...fields } : s)
+        : [...d.subjects, { id, ...fields }],
+      topics: [...d.topics, ...topics],
+      activeRoadmapId: id
+    }));
+    setModal('');
+    setToast(editing?.id ? 'Roadmap updated' : 'Roadmap created');
+  }
+  function moveTopic(topic, direction) {
+    update('topics', topics => {
+      const siblings = topics.filter(t => t.subjectId === topic.subjectId);
+      const index = siblings.findIndex(t => t.id === topic.id);
+      const neighbor = siblings[index + direction];
+      if (index < 0 || !neighbor) return topics;
+      const current = siblings[index];
+      return topics.map(t => t.id === current.id ? neighbor : t.id === neighbor.id ? current : t);
+    });
+  }
   const openEdit=(item,type)=>{setEditing({...item,_type:type});setModal(type)};
   const saveStudy=(form)=>{
     if(editing?.id) update('studies',a=>a.map(x=>x.id===editing.id?{...x,...form}:x));
     else update('studies',a=>[...a,{id:uid(),...form}]);
-    if(form.revision && !data.revisions.some(r=>r.topic===form.topic && r.status!=='done')){
+    if(form.revision && !data.revisions.some(r=>r.topic===form.topic && r.subjectId===form.subjectId && r.status!=='done')){
       update('revisions',a=>[...a,{id:uid(),topic:form.topic,subjectId:form.subjectId,due:form.date,status:'due',count:0}]);
     }
     setModal('');setToast('Study plan saved');
   };
   const deleteItem=(key,id)=>{update(key,a=>a.filter(x=>x.id!==id));setModal('');setToast('Item deleted')};
-  const addTopic=(f)=>{update('topics',a=>[...a,{id:uid(),...f}]);setModal('');setToast('Topic added')};
+  function saveTopic(form) {
+    if (editing?.id) {
+      update('topics', topics => topics.map(t => t.id === editing.id ? { ...t, ...form } : t));
+    } else {
+      const topic = { ...form, id: uid() };
+      update('topics', topics => [...topics, topic]);
+    }
+    setModal('');
+    setToast(editing?.id ? 'Topic updated' : 'Topic added');
+  }
   const addTask=(f)=>{update('tasks',a=>[...a,{id:uid(),...f}]);setModal('');setToast('Task added')};
   const addNote=(f)=>{if(editing?.id)update('notes',a=>a.map(n=>n.id===editing.id?{...n,...f}:n));else update('notes',a=>[...a,{id:uid(),...f}]);setModal('');setToast('Note saved')};
   const doneRevision=(r,level)=>{
@@ -74,7 +112,7 @@ export default function App(){
   const completed=data.topics.filter(x=>x.status==='completed').length;
   const pending=data.topics.filter(x=>x.status!=='completed').length;
   const exportData=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='forma-backup.json';a.click();URL.revokeObjectURL(a.href)};
-  const importData=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{setData({...initial,...JSON.parse(r.result)});setToast('Backup restored')}catch{setToast('Invalid backup file')}};r.readAsText(f)};
+  const importData=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{setData(installCurriculum({...initial,...JSON.parse(r.result)}));setToast('Backup restored')}catch{setToast('Invalid backup file')}};r.readAsText(f)};
   const filteredTopics=data.topics.filter(t=>(t.title+' '+t.subtopic+' '+subjectName(t.subjectId)).toLowerCase().includes(search.toLowerCase()));
   const pageTitle=page==='Overview'?'A little progress, every day.':page;
   return <div className={`app ${data.theme}`}>
@@ -92,22 +130,36 @@ export default function App(){
     <main className="main">
       <header className="topbar"><button className="icon-btn mobile-menu" onClick={()=>setMobileOpen(true)}><Menu/></button><div className="crumb">Workspace <span>/</span> <b>{page}</b></div><div className="top-actions"><div className="searchbox"><Search size={16}/><input placeholder="Search anything..." value={search} onChange={e=>setSearch(e.target.value)}/><kbd>⌘ K</kbd></div><button className="icon-btn" title="Toggle theme" onClick={()=>update('theme',data.theme==='light'?'dark':'light')}>{data.theme==='light'?<Moon size={18}/>:<Sun size={18}/>}</button><button className="avatar small-avatar" title="Settings" onClick={()=>setPage('Settings')}>K</button></div></header>
       <div className="content">
-        <div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div><h1>{pageTitle}</h1><p>{page==='Overview'?'Your personal space to plan, learn and keep moving forward.':'Keep your learning organized and intentional.'}</p></div><div className="heading-actions"><button className="btn secondary" onClick={()=>{setEditing(null);setModal('topic')}}><Plus size={16}/> Add topic</button><button className="btn primary" onClick={addStudy}><Plus size={17}/> Plan study</button></div></div>
+        <div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div><h1>{pageTitle}</h1><p>{page==='Overview'?'Your personal space to plan, learn and keep moving forward.':page==='Learning Roadmap'?'Choose a roadmap or create one for any subject you want to learn.':'Keep your learning organized and intentional.'}</p></div><div className="heading-actions">{page === 'Learning Roadmap' ? <>
+          <button className="btn secondary" onClick={addStudy}><CalendarDays size={16}/> Plan study</button>
+          <button className="btn primary" onClick={() => newItem('roadmap')}><Plus size={16}/> New roadmap</button>
+        </> : <>
+          <button className="btn secondary" onClick={newTopic}><Plus size={16}/> Add topic</button>
+          <button className="btn primary" onClick={addStudy}><Plus size={17}/> Plan study</button>
+        </>}</div></div>
+        {page==='Course Library'&&<CourseCards data={data} search={search} onOpen={id=>{update('activeRoadmapId',id);setPage('Learning Roadmap')}}/>}
+        {page==='Overview'&&<button className="course-card library-entry" onClick={()=>setPage('Course Library')}><BookOpen size={19}/><strong>Java Full Stack · Course Library</strong><small>Browse the courses, projects and practice questions</small><ArrowUpRight size={16}/></button>}
         {page==='Overview'&&<Dashboard data={data} todayStudies={todayStudies} due={dueRevisions} completed={completed} pending={pending} allMinutes={allMinutes} onAdd={addStudy} onPage={setPage} onEdit={openEdit} subjectName={subjectName}/>}
         {page==='Calendar'&&<CalendarPage studies={data.studies} month={month} setMonth={setMonth} view={view} setView={setView} selected={selectedDate} setSelected={setSelectedDate} onAdd={addStudy} onEdit={x=>openEdit(x,'study')}/>}
-        {page==='Learning Roadmap'&&<Roadmap topics={data.topics} subjects={data.subjects} onAdd={()=>setModal('topic')} onEdit={x=>openEdit(x,'topic')}/>}
-        {page==='Subjects & Topics'&&<TopicsPage topics={filteredTopics} subjects={data.subjects} onAdd={()=>setModal('topic')} onEdit={x=>openEdit(x,'topic')} onDelete={id=>deleteItem('topics',id)} subjectName={subjectName}/>}
+        {page === 'Learning Roadmap' && <Roadmap subjects={data.subjects} topics={data.topics} activeId={activeRoadmap?.id}
+          onSelect={id => update('activeRoadmapId', id)} onCreate={() => newItem('roadmap')}
+          onEditRoadmap={() => openEdit(activeRoadmap, 'roadmap')} onAddTopic={newTopic}
+          onEditTopic={t => openEdit(t, 'topic')} onMove={moveTopic}
+          onPlan={t => newItem('study', { subjectId: t.subjectId, topic: t.title, subtopic: t.subtopic })}/>}
+        {page==='Subjects & Topics'&&<TopicsPage topics={filteredTopics} subjects={data.subjects} onAdd={newTopic} onEdit={x=>openEdit(x,'topic')} onDelete={id=>deleteItem('topics',id)} subjectName={subjectName}/>}
         {page==='Revision Center'&&<RevisionPage revisions={data.revisions} subjectName={subjectName} onDone={doneRevision}/>}
         {page==='Study Sessions'&&<SessionsPage timer={timer} setTimer={setTimer} timeText={timeText} start={startTimer} finish={finishTimer} subjects={data.subjects} sessions={data.sessions} subjectName={subjectName}/>}
         {page==='Notes'&&<NotesPage notes={data.notes} onAdd={()=>{setEditing(null);setModal('note')}} onEdit={x=>openEdit(x,'note')} onDelete={id=>deleteItem('notes',id)} search={search}/>}
-        {page==='Tasks & Goals'&&<TasksPage tasks={data.tasks} onAdd={()=>setModal('task')} onDone={id=>update('tasks',a=>a.map(t=>t.id===id?{...t,status:'completed'}:t))} onDelete={id=>deleteItem('tasks',id)}/>}
-        {page==='Resources'&&<ResourcesPage resources={data.resources} onAdd={()=>setModal('resource')} onDelete={id=>deleteItem('resources',id)}/>}
+        {page==='Tasks & Goals'&&<TasksPage tasks={data.tasks} onAdd={()=>newItem('task')} onDone={id=>update('tasks',a=>a.map(t=>t.id===id?{...t,status:'completed'}:t))} onDelete={id=>deleteItem('tasks',id)}/>}
+        {page==='Resources'&&<ResourcesPage resources={data.resources} onAdd={()=>newItem('resource')} onDelete={id=>deleteItem('resources',id)}/>}
         {page==='Analytics'&&<Analytics data={data} completed={completed} pending={pending} allMinutes={allMinutes}/>}
         {page==='Settings'&&<SettingsPage data={data} update={update} exportData={exportData} importData={importData}/>}
       </div>
       <footer className="footer"><span>FORMA <b>·</b> MAKE LEARNING INTENTIONAL</span><span>Your progress is saved on this device.</span></footer>
     </main>
-    {modal&&<Modal type={modal} editing={editing} data={data} onClose={()=>setModal('')} onStudy={saveStudy} onTopic={addTopic} onTask={addTask} onNote={addNote} onResource={f=>{update('resources',a=>[...a,{id:uid(),...f}]);setModal('');setToast('Resource saved')}} onDelete={deleteItem}/>}
+    {modal === 'roadmap' && <RoadmapForm roadmap={editing} subjects={data.subjects}
+      onClose={() => setModal('')} onSave={saveRoadmap}/>}
+    {modal && modal !== 'roadmap' && <Modal type={modal} editing={editing} data={data} onClose={()=>setModal('')} onStudy={saveStudy} onTopic={saveTopic} onTask={addTask} onNote={addNote} onResource={f=>{update('resources',a=>[...a,{id:uid(),...f}]);setModal('');setToast('Resource saved')}} onDelete={deleteItem}/>}
     {toast&&<div className="toast"><Check size={16}/>{toast}</div>}
   </div>
 }
@@ -121,7 +173,7 @@ function Dashboard({data,todayStudies,due,completed,pending,allMinutes,onAdd,onP
     <Metric label="Topics completed" value={completed} sub={`${pending} still in progress`} icon={BookOpen} tone="blue"/>
     <Metric label="Study time" value={`${hrs}h ${mins}m`} sub="Total tracked time" icon={Clock3} tone="mint"/>
     <Metric label="Revisions due" value={due.length} sub="Ready for a quick review" icon={RefreshCw} tone="peach"/>
-    <Metric label="Learning paths" value={new Set(data.topics.map(t=>t.subjectId)).size} sub="Subjects in your space" icon={Route} tone="lilac"/>
+    <Metric label="Learning paths" value={data.subjects.length} sub="Roadmaps in your space" icon={Route} tone="lilac"/>
   </div>
   <div className="dashboard-grid">
     <section className="panel today-panel"><div className="panel-head"><div><span className="eyebrow">YOUR FOCUS</span><h2>Today, at a glance</h2></div><button className="text-btn" onClick={()=>onPage('Calendar')}>Open calendar <ArrowUpRight size={15}/></button></div>
@@ -142,9 +194,6 @@ function CalendarPage({studies,month,setMonth,view,setView,selected,setSelected,
   <div className="selected-date-panel"><div><span className="eyebrow">SELECTED DAY</span><h3>{new Date(selected+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</h3></div><div className="selected-items">{selectedItems.length?selectedItems.map(s=><button className="selected-chip" key={s.id} onClick={()=>onEdit(s)}>{s.time||'Anytime'} · {s.topic}</button>):<span className="muted-text">No study plans for this date yet.</span>}</div><button className="btn secondary" onClick={onAdd}><Plus size={15}/> Add to this day</button></div>
   </section>
 }
-function Roadmap({topics,subjects,onAdd,onEdit}){
-  return <div className="roadmap-wrap"><div className="roadmap-intro"><div><span className="eyebrow">YOUR BIG PICTURE</span><h2>Progress is a path, not a race.</h2><p>Build a learning path one topic at a time. Your topics will appear here as you add them.</p></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> Add to roadmap</button></div>{subjects.map(s=>{const list=topics.filter(t=>t.subjectId===s.id);return <section className="panel roadmap-subject" key={s.id}><div className="roadmap-head"><span className="subject-dot" style={{background:s.color}}/><h3>{s.name}</h3><span className="mini-tag">{list.length} TOPICS</span><div className="roadmap-line"/></div>{list.length?<div className="roadmap-nodes">{list.map(t=><button className="roadmap-node" key={t.id} onClick={()=>onEdit(t)}><span className={`node ${t.status}`}>{t.status==='completed'?<Check size={14}/>:<Circle size={12}/>}</span><b>{t.title}</b><small>{t.subtopic||'Major topic'}</small></button>)}</div>:<p className="muted-text roadmap-empty">No topics added to this path yet.</p>}</section>})}</div>
-}
 function TopicsPage({topics,subjects,onAdd,onEdit,onDelete,subjectName}){
   const [filter,setFilter]=useState('All');
   const shown=topics.filter(t=>filter==='All'||t.status===filter.toLowerCase());
@@ -161,15 +210,18 @@ function NotesPage({notes,onAdd,onEdit,onDelete,search}){const list=notes.filter
 function TasksPage({tasks,onAdd,onDone,onDelete}){return <><div className="section-toolbar"><p className="muted-text">Keep projects, practice and small commitments moving.</p><button className="btn primary" onClick={onAdd}><Plus size={16}/> Add task</button></div><section className="panel">{tasks.length?tasks.map(t=><div className="task-row" key={t.id}><button className={`check-btn ${t.status==='completed'?'checked':''}`} onClick={()=>onDone(t.id)}>{t.status==='completed'?<Check size={14}/>:null}</button><div className="task-info"><b className={t.status==='completed'?'strike':''}>{t.title}</b><small>{t.date?`Due ${fmt(t.date)}`:'No deadline'} · {t.priority||'Normal'} priority</small></div><span className={`status ${t.status}`}>{statusLabel(t.status)}</span><button className="icon-btn" onClick={()=>onDelete(t.id)}><Trash2 size={15}/></button></div>):<div className="empty-large"><div className="empty-art"><ListTodo/></div><h3>Clear goals, calmer days.</h3><p>Add your first task, project or coding practice goal.</p><button className="btn primary" onClick={onAdd}><Plus size={16}/> Add a task</button></div>}</section></>}
 function ResourcesPage({resources,onAdd,onDelete}){return <><div className="section-toolbar"><p className="muted-text">Collect useful links and learning material in one place.</p><button className="btn primary" onClick={onAdd}><Plus size={16}/> Save resource</button></div><div className="resource-list">{resources.length?resources.map(r=><div className="panel resource-row" key={r.id}><div className="round-icon blue-bg"><Library size={17}/></div><div><b>{r.title}</b><small>{r.url}</small></div><a href={r.url} target="_blank" rel="noreferrer"><ExternalLink size={16}/></a><button className="icon-btn" onClick={()=>onDelete(r.id)}><Trash2 size={15}/></button></div>):<div className="panel empty-large"><div className="empty-art"><Library/></div><h3>Your learning library</h3><p>Save tutorials, documentation and references here.</p><button className="btn primary" onClick={onAdd}><Plus size={16}/> Add resource</button></div>}</div></>}
 function Analytics({data,completed,pending,allMinutes}){const hours=(allMinutes/60).toFixed(1);return <><div className="metric-grid"><Metric label="Total study time" value={`${hours}h`} sub="Tracked sessions" icon={Clock3} tone="blue"/><Metric label="Completed topics" value={completed} sub="Learning milestones" icon={Check} tone="mint"/><Metric label="Topics in progress" value={pending} sub="Keep moving forward" icon={BookOpen} tone="peach"/><Metric label="Study sessions" value={data.sessions.length} sub="Focus blocks saved" icon={Timer} tone="lilac"/></div><section className="panel"><div className="panel-head"><div><span className="eyebrow">YOUR LEARNING MIX</span><h2>Progress by subject</h2></div></div>{data.subjects.map(s=>{const list=data.topics.filter(t=>t.subjectId===s.id),done=list.filter(t=>t.status==='completed').length,pct=list.length?Math.round(done/list.length*100):0;return <div className="analytics-subject" key={s.id}><div className="progress-title"><span className="subject-dot" style={{background:s.color}}/><b>{s.name}</b><small>{done} of {list.length} completed</small></div><div className="progress-track"><div style={{width:pct+'%',background:s.color}}/></div><strong>{pct}%</strong></div>})}{!data.subjects.length&&<div className="quiet-empty">Add subjects to see your progress.</div>}</section></>}
-function SettingsPage({data,update,exportData,importData}){return <div className="settings-grid"><section className="panel settings-panel"><span className="eyebrow">PREFERENCES</span><h2>Make Forma yours.</h2><div className="setting-row"><div><b>Appearance</b><small>Choose a comfortable workspace theme.</small></div><div className="segmented"><button className={data.theme==='light'?'chosen':''} onClick={()=>update('theme','light')}><Sun size={14}/> Light</button><button className={data.theme==='dark'?'chosen':''} onClick={()=>update('theme','dark')}><Moon size={14}/> Dark</button></div></div><div className="setting-row"><div><b>Daily study target</b><small>Your ideal learning time each day.</small></div><div className="inline-input"><input type="number" min="1" max="16" value={data.goals?.dailyHours||3} onChange={e=>update('goals',{...data.goals,dailyHours:Number(e.target.value)})}/><span>hours</span></div></div></section><section className="panel settings-panel"><span className="eyebrow">YOUR DATA</span><h2>Your learning belongs to you.</h2><p className="muted-text">Forma saves data in this browser. Export a backup regularly so you can move or restore your learning space.</p><div className="data-actions"><button className="btn secondary" onClick={exportData}><Download size={16}/> Export backup</button><label className="btn secondary upload-btn"><Upload size={16}/> Import backup<input type="file" accept="application/json" onChange={importData} hidden/></label></div><div className="privacy-note"><Check size={16}/> Your data stays in this browser unless you export it.</div></section></div>}
+function SettingsPage({data,update,exportData,importData}){return <div className="settings-grid"><section className="panel settings-panel"><span className="eyebrow">PREFERENCES</span><h2>Make Forma yours.</h2><div className="setting-row"><div><b>Appearance</b><small>Choose a comfortable workspace theme.</small></div><div className="segmented"><button className={data.theme==='light'?'chosen':''} onClick={()=>update('theme','light')}><Sun size={14}/> Lavender Mist</button><button className={data.theme==='dark'?'chosen':''} onClick={()=>update('theme','dark')}><Moon size={14}/> Soft Iris</button></div></div><div className="setting-row"><div><b>Daily study target</b><small>Your ideal learning time each day.</small></div><div className="inline-input"><input type="number" min="1" max="16" value={data.goals?.dailyHours||3} onChange={e=>update('goals',{...data.goals,dailyHours:Number(e.target.value)})}/><span>hours</span></div></div></section><section className="panel settings-panel"><span className="eyebrow">YOUR DATA</span><h2>Your learning belongs to you.</h2><p className="muted-text">Forma saves data in this browser. Export a backup regularly so you can move or restore your learning space.</p><div className="data-actions"><button className="btn secondary" onClick={exportData}><Download size={16}/> Export backup</button><label className="btn secondary upload-btn"><Upload size={16}/> Import backup<input type="file" accept="application/json" onChange={importData} hidden/></label></div><div className="privacy-note"><Check size={16}/> Your data stays in this browser unless you export it.</div></section></div>}
 function Modal({type,editing,data,onClose,onStudy,onTopic,onTask,onNote,onResource,onDelete}){
- const isEdit=!!editing?.id; const [form,setForm]=useState(()=>type==='study'?{date:editing?.date||today(),time:editing?.time||'',subjectId:editing?.subjectId||data.subjects[0]?.id||'',topic:editing?.topic||'',subtopic:editing?.subtopic||'',status:editing?.status||'pending',notes:editing?.notes||'',revision:editing?.revision||false}:type==='topic'?{subjectId:editing?.subjectId||data.subjects[0]?.id||'',title:editing?.title||'',subtopic:editing?.subtopic||'',status:editing?.status||'pending',priority:editing?.priority||'Normal'}:type==='task'?{title:'',date:today(),priority:'Normal',status:'pending'}:type==='note'?{title:editing?.title||'',body:editing?.body||'',tag:editing?.tag||'NOTE',date:editing?.date||today()}: {title:'',url:''});
+ const isEdit=!!editing?.id; const [form,setForm]=useState(()=>type==='study'?{date:editing?.date||today(),time:editing?.time||'',subjectId:editing?.subjectId||data.subjects[0]?.id||'',topic:editing?.topic||'',subtopic:editing?.subtopic||'',status:editing?.status||'pending',notes:editing?.notes||'',revision:editing?.revision||false}:type==='topic'?{phase:editing?.phase||'',subjectId:editing?.subjectId||data.subjects[0]?.id||'',title:editing?.title||'',subtopic:editing?.subtopic||'',status:editing?.status||'pending',priority:editing?.priority||'Normal'}:type==='task'?{title:'',date:today(),priority:'Normal',status:'pending'}:type==='note'?{title:editing?.title||'',body:editing?.body||'',tag:editing?.tag||'NOTE',date:editing?.date||today()}: {title:'',url:''});
  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
  const title={study:isEdit?'Edit study plan':'Plan a study session',topic:isEdit?'Edit topic':'Add a topic',task:'Add a task',note:isEdit?'Edit note':'Create a note',resource:'Save a resource'}[type];
- const submit=e=>{e.preventDefault();if(type==='study')onStudy(form);if(type==='topic')onTopic(form);if(type==='task')onTask(form);if(type==='note')onNote(form);if(type==='resource')onResource(form)};
+ const submit=e=>{e.preventDefault();if(type==='study')onStudy(form);if(type==='topic'){
+   if (!form.subjectId || !form.title.trim()) return;
+   onTopic({...form, title:form.title.trim(), phase:form.phase.trim()});
+ }if(type==='task')onTask(form);if(type==='note')onNote(form);if(type==='resource')onResource(form)};
  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><form className="modal" onSubmit={submit}><div className="modal-head"><div><span className="eyebrow">FORMA WORKSPACE</span><h2>{title}</h2></div><button type="button" className="icon-btn" onClick={onClose}><X/></button></div>
- {type==='study'&&<><Field label="Study date"><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} required/></Field><Field label="Technology / subject"><select value={form.subjectId} onChange={e=>set('subjectId',e.target.value)}>{data.subjects.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select></Field><Field label="Major topic"><input value={form.topic} onChange={e=>set('topic',e.target.value)} placeholder="e.g. Object-oriented programming" required/></Field><Field label="Subtopic"><input value={form.subtopic} onChange={e=>set('subtopic',e.target.value)} placeholder="e.g. Polymorphism"/></Field><div className="form-two"><Field label="Start time (optional)"><input type="time" value={form.time} onChange={e=>set('time',e.target.value)}/></Field><Field label="Status"><select value={form.status} onChange={e=>set('status',e.target.value)}><option value="pending">Pending</option><option value="started">Started</option><option value="completed">Completed</option></select></Field></div><Field label="Notes"><textarea rows="3" value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="What do you want to understand?"/></Field><label className="toggle-line"><input type="checkbox" checked={form.revision} onChange={e=>set('revision',e.target.checked)}/><span><b><BookmarkPlus size={16}/> Save for revision</b><small>Add this topic to your revision queue.</small></span></label></>}
- {type==='topic'&&<><Field label="Technology / subject"><select value={form.subjectId} onChange={e=>set('subjectId',e.target.value)}>{data.subjects.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select></Field><Field label="Major topic"><input required value={form.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Collections Framework"/></Field><Field label="Subtopic"><input value={form.subtopic} onChange={e=>set('subtopic',e.target.value)} placeholder="e.g. ArrayList"/></Field><div className="form-two"><Field label="Status"><select value={form.status} onChange={e=>set('status',e.target.value)}><option value="pending">Pending</option><option value="started">Started</option><option value="completed">Completed</option></select></Field><Field label="Priority"><select value={form.priority} onChange={e=>set('priority',e.target.value)}><option>Normal</option><option>High</option><option>Low</option></select></Field></div></>}
+ {type==='study'&&<><Field label="Study date"><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} required/></Field><Field label="Roadmap / subject"><select value={form.subjectId} onChange={e=>set('subjectId',e.target.value)}>{data.subjects.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select></Field><Field label="Major topic"><input value={form.topic} onChange={e=>set('topic',e.target.value)} placeholder="e.g. Object-oriented programming" required/></Field><Field label="Subtopic"><input value={form.subtopic} onChange={e=>set('subtopic',e.target.value)} placeholder="e.g. Polymorphism"/></Field><div className="form-two"><Field label="Start time (optional)"><input type="time" value={form.time} onChange={e=>set('time',e.target.value)}/></Field><Field label="Status"><select value={form.status} onChange={e=>set('status',e.target.value)}><option value="pending">Pending</option><option value="started">Started</option><option value="completed">Completed</option></select></Field></div><Field label="Notes"><textarea rows="3" value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="What do you want to understand?"/></Field><label className="toggle-line"><input type="checkbox" checked={form.revision} onChange={e=>set('revision',e.target.checked)}/><span><b><BookmarkPlus size={16}/> Save for revision</b><small>Add this topic to your revision queue.</small></span></label></>}
+ {type==='topic'&&<><Field label="Roadmap / subject"><select value={form.subjectId} onChange={e=>set('subjectId',e.target.value)}>{data.subjects.map(s=><option value={s.id} key={s.id}>{s.name}</option>)}</select></Field><Field label="Phase (optional)"><input list="roadmap-phases" value={form.phase} onChange={e=>set('phase',e.target.value)} placeholder="e.g. Foundations"/></Field><datalist id="roadmap-phases">{[...new Set(data.topics.filter(t=>t.subjectId===form.subjectId && t.phase).map(t=>t.phase))].map(phase=><option key={phase} value={phase}/>)}</datalist><Field label="Major topic"><input required pattern={'.*\\S.*'} title="Enter a topic name" value={form.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Collections Framework"/></Field><Field label="Subtopic"><input value={form.subtopic} onChange={e=>set('subtopic',e.target.value)} placeholder="e.g. ArrayList"/></Field><div className="form-two"><Field label="Status"><select value={form.status} onChange={e=>set('status',e.target.value)}><option value="pending">Pending</option><option value="started">Started</option><option value="completed">Completed</option></select></Field><Field label="Priority"><select value={form.priority} onChange={e=>set('priority',e.target.value)}><option>Normal</option><option>High</option><option>Low</option></select></Field></div></>}
  {type==='task'&&<><Field label="Task name"><input required value={form.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Solve 3 array problems"/></Field><Field label="Due date"><input type="date" value={form.date} onChange={e=>set('date',e.target.value)}/></Field><Field label="Priority"><select value={form.priority} onChange={e=>set('priority',e.target.value)}><option>Normal</option><option>High</option><option>Low</option></select></Field></>}
  {type==='note'&&<><Field label="Title"><input required value={form.title} onChange={e=>set('title',e.target.value)} placeholder="Give this note a name"/></Field><Field label="Tag"><input value={form.tag} onChange={e=>set('tag',e.target.value)}/></Field><Field label="Your note"><textarea rows="7" value={form.body} onChange={e=>set('body',e.target.value)} placeholder="Capture an idea, explanation or code reminder..."/></Field></>}
  {type==='resource'&&<><Field label="Resource title"><input required value={form.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Java documentation"/></Field><Field label="URL"><input type="url" required value={form.url} onChange={e=>set('url',e.target.value)} placeholder="https://..."/></Field></>}
